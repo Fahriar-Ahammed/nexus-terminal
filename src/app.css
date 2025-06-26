@@ -1,0 +1,13 @@
+/* src/app.css */
+@font-face {
+    font-family: 'JetBrains Mono';
+    src: url('static/fonts/JetBrainsMono-Regular.woff2') format('woff2');
+    font-weight: normal;
+    font-style: normal;
+    font-display: swap;
+}
+
+/* Optional: You can set it as a global monospace font if you want */
+body {
+    --font-mono: 'JetBrains Mono', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}

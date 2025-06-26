@@ -77,7 +77,6 @@ fn main() {
     let dummy_writer = Mutex::new(Box::new(std::io::sink()) as Box<dyn Write + Send>);
 
     tauri::Builder::default()
-        // This makes our PtyState available to all commands and the setup hook
         .manage(PtyState { writer: dummy_writer })
         .setup(|app| {
             // When the app starts, spawn the PTY in the background
