@@ -6,15 +6,13 @@
     import { listen } from '@tauri-apps/api/event';
     import { invoke } from '@tauri-apps/api/core';
     import 'xterm/css/xterm.css';
-    import { getCurrentWindow } from '@tauri-apps/api/window'; // Good for window operations
-
-    const appWindow = getCurrentWindow(); // Useful for window-related tasks
+    import { getCurrentWindow } from '@tauri-apps/api/window';
 
     let terminalEl: HTMLDivElement;
     let term: Terminal;
     const fitAddon = new FitAddon();
 
-    // A modern theme like Catppuccin (Mocha) for better organization
+    // The theme can be kept as is, it's great.
     const catppuccinMocha = {
         background: '#1e1e2e',
         foreground: '#cdd6f4',
@@ -40,22 +38,18 @@
     };
 
     onMount(async () => {
-        // Create a new Xterm.js instance
+        const appWindow = getCurrentWindow();
         term = new Terminal({
             fontSize: 15,
             fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
             cursorBlink: true,
             theme: catppuccinMocha,
-            allowProposedApi: true, // Needed for some modern renderer features
+            allowProposedApi: true,
         });
 
-        // Load addons
         term.loadAddon(fitAddon);
-
-        // Open the terminal in our div
         term.open(terminalEl);
 
-        // Load and activate the WebGL renderer for performance
         try {
             const webglAddon = new WebglAddon();
             term.loadAddon(webglAddon);
@@ -64,31 +58,34 @@
             console.warn("WebGL renderer failed to load, falling back to canvas.", e);
         }
 
-        // Make the terminal fit the container
         fitAddon.fit();
 
-        // Listen for output from the Rust backend
         const unlisten = await listen<Uint8Array>('terminal-output', (event) => {
             term.write(event.payload);
         });
 
+        // --- THIS IS THE CORRECTED SECTION ---
         // Handle user input (typing in the terminal)
-        term.onData((data) => {
-            invoke('write_to_shell', { text: data });
+        const onDataUnlisten = term.onData((data) => {
+            const encoder = new TextEncoder();
+            // 1. Call the correct command: `write_to_pty`
+            // 2. Send the correct data format: `{ bytes: ... }`
+            invoke('write_to_pty', { bytes: Array.from(encoder.encode(data)) });
         });
 
-        // Handle resizing using Tauri's event for better accuracy
         const unlistenResize = await appWindow.onResized(() => {
-            // Use a small timeout to ensure the DOM has updated
             setTimeout(() => fitAddon.fit(), 50);
         });
 
-        // Clean up when the component is destroyed
+        // Clean up all listeners when the component is destroyed
         onDestroy(() => {
             unlisten();
-            unlistenResize(); // Unlisten from the window resize event
+            unlistenResize();
+            onDataUnlisten.dispose(); // Also dispose the onData listener
             term.dispose();
         });
+
+        term.focus(); // Focus the terminal on start
     });
 </script>
 
