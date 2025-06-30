@@ -12,9 +12,14 @@
   "app": {
     "windows": [
       {
-        "title": "nexus-terminal",
-        "width": 800,
-        "height": 600
+        "label": "main",
+        "title": "Nexus Terminal",
+        "width": 900,
+        "height": 600,
+        "decorations": false,
+        "transparent": true,
+        "resizable": true,
+        "fullscreen": false
       }
     ],
     "security": {
