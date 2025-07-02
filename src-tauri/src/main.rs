@@ -1,91 +1,67 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};
+use std::env;
 use std::io::{Read, Write};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::thread;
-use tauri::{AppHandle, Emitter, Manager, State}; // Emitter is now imported
+use tauri::{AppHandle, Emitter, Manager, State};
 
-// This struct will hold our shell's writer process.
-// We will manage it using Tauri's state management.
+// A state object to hold a thread-safe handle to the PTY writer
 struct PtyState {
-    writer: Mutex<Box<dyn Write + Send>>,
+    writer: Arc<Mutex<Box<dyn Write + Send>>>,
 }
 
-// This command is exposed to the frontend. It gets the writer from Tauri's state.
+// This command receives input from the frontend and writes it to the PTY
 #[tauri::command]
-fn write_to_shell(text: String, state: State<PtyState>) -> Result<(), String> {
-    let mut writer = state.writer.lock().unwrap();
-    write!(writer, "{}", text).map_err(|e| e.to_string())
+fn write_to_pty(bytes: Vec<u8>, state: State<PtyState>) {
+    if let Ok(mut writer) = state.writer.lock() {
+        // Write the bytes directly to the shell process
+        let _ = writer.write_all(&bytes);
+    }
 }
 
-// This function spawns the PTY and starts the background reader thread.
-fn spawn_pty(app_handle: AppHandle) {
-    // This runs in a background thread
+// A thread that continuously reads output from the shell and emits it to the frontend
+fn pty_reader_thread(app: AppHandle, mut reader: Box<dyn Read + Send>) {
     thread::spawn(move || {
-        // Create the PTY
-        let pty_system = NativePtySystem::default();
-        let pair = pty_system
-            .openpty(PtySize {
-                rows: 24,
-                cols: 80,
-                pixel_width: 0,
-                pixel_height: 0,
-            })
-            .expect("Failed to create PTY");
-
-        // Spawn a shell into the PTY
-        let mut cmd = CommandBuilder::new("bash");
-        cmd.env("TERM", "xterm-256color");
-        let _child = pair.slave.spawn_command(cmd).expect("Failed to spawn shell");
-
-        // Get the PTY reader and writer
-        let mut reader = pair.master.try_clone_reader().expect("Failed to clone reader");
-        let writer = pair.master; // The master IS the writer
-
-        // Get a handle to the state object and replace the dummy writer with the real one
-        let state = app_handle.state::<PtyState>();
-        *state.writer.lock().unwrap() = writer;
-
-        // Background thread to continuously read from the PTY
         let mut buffer = [0u8; 8192];
         loop {
             match reader.read(&mut buffer) {
-                Ok(count) => {
-                    if count > 0 {
-                        let chunk = &buffer[..count];
-                        // Emit the raw byte data to the frontend
-                        app_handle.emit("terminal-output", chunk).unwrap();
-                    } else {
-                        // EOF, the shell process has exited.
-                        app_handle.emit("terminal-output", "\r\n[SHELL EXITED]").unwrap();
-                        break;
-                    }
+                Ok(count) if count > 0 => {
+                    let _ = app.emit("terminal-output", &buffer[..count]);
                 }
-                Err(e) => {
-                    let error_msg = format!("\r\n[ERROR] {}", e);
-                    app_handle.emit("terminal-output", error_msg).unwrap();
-                    break;
-                }
+                _ => break, // PTY has been closed
             }
         }
+        let _ = app.emit("terminal-output", "\r\n[SHELL EXITED]");
     });
 }
 
 fn main() {
-    // Create a dummy writer for the initial state. It will be replaced once the PTY is spawned.
-    let dummy_writer = Mutex::new(Box::new(std::io::sink()) as Box<dyn Write + Send>);
+    let pty_system = NativePtySystem::default();
+    let pair = pty_system
+        .openpty(PtySize::default())
+        .expect("Failed to create PTY");
+
+    // Use the default shell for the user's system
+    let shell = env::var("SHELL").unwrap_or_else(|_| "bash".to_string());
+    let mut cmd = CommandBuilder::new(shell);
+    cmd.env("TERM", "xterm-256color");
+    let _child = pair.slave.spawn_command(cmd).expect("Failed to spawn shell");
+
+    let writer = Arc::new(Mutex::new(pair.master.try_clone_writer().unwrap()));
+    let reader = pair.master.try_clone_reader().unwrap();
+
+    let pty_state = PtyState { writer };
 
     tauri::Builder::default()
-        .manage(PtyState { writer: dummy_writer })
-        .setup(|app| {
-            // When the app starts, spawn the PTY in the background
-            let handle = app.handle().clone();
-            spawn_pty(handle);
+        .manage(pty_state)
+        .setup(move |app| {
+            // Start the reader thread when the app is ready
+            pty_reader_thread(app.handle().clone(), reader);
             Ok(())
         })
-        // Register our `write_to_shell` command
-        .invoke_handler(tauri::generate_handler![write_to_shell])
+        .invoke_handler(tauri::generate_handler![write_to_pty])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
