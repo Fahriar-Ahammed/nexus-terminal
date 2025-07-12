@@ -45,7 +45,10 @@
         fitAddon.fit();
 
         const unlisten = await listen<Uint8Array>('terminal-output', (event) => {
-            term.write(event.payload);
+            const decoder = new TextDecoder();
+            const decodedString = decoder.decode(event.payload);
+            console.log("Terminal: Received and decoded:", decodedString);
+            term.write(decodedString);
         });
 
         // FIX #2: Make sure this calls the 'write_to_pty' command

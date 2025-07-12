@@ -29,4 +29,5 @@ portable-pty = "0.5"
 reedline = "0.40.0" # Or whatever version you have
 dirs = "5.0"
 nu-ansi-term = "0.50.1"
+tauri-plugin-store = "2.3.0"
 

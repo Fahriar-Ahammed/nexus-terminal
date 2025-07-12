@@ -1,6 +1,9 @@
 <!-- src/lib/components/Titlebar.svelte -->
 <script lang="ts">
     import { getCurrentWindow } from '@tauri-apps/api/window';
+
+    export let onSshClick: () => void;
+
     const appWindow = getCurrentWindow();
     const minimizeWindow = () => appWindow.minimize();
     const toggleMaximizeWindow = () => appWindow.toggleMaximize();
@@ -39,6 +42,10 @@
         <span>Nexus Terminal</span>
     </div>
 
-    <!-- Right side: An empty div to balance the grid. It will be the same width as the left controls. -->
-    <div class="w-[76px]"></div>
+    <!-- Right side: SSH Manager Button -->
+    <div class="px-4 flex items-center">
+        <button on:click={onSshClick} aria-label="Open SSH Manager" class="w-8 h-8 flex justify-center items-center text-gray-400 hover:text-white">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg>
+        </button>
+    </div>
 </header>
