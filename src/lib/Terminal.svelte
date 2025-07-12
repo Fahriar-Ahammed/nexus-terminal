@@ -30,36 +30,47 @@
         const appWindow = getCurrentWindow();
         term = new Terminal({
             fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
-            fontSize: 16, // A slightly smaller, even font size often renders more clearly
+            fontSize: 14,
             cursorBlink: true,
             theme: catppuccinMocha,
-            // FIX #1: Add these two options for crisp fonts
             allowTransparency: false,
-            letterSpacing: 1,
-            lineHeight: 1,
+            devicePixelRatio: window.devicePixelRatio,
         });
 
         term.loadAddon(fitAddon);
         term.open(terminalEl);
 
+        try {
+            const webglAddon = new WebglAddon();
+            term.loadAddon(webglAddon);
+        } catch (e) {
+            console.warn("WebGL renderer failed to load.", e);
+        }
+
         fitAddon.fit();
 
         const unlisten = await listen<Uint8Array>('terminal-output', (event) => {
-            const decoder = new TextDecoder();
-            const decodedString = decoder.decode(event.payload);
-            console.log("Terminal: Received and decoded:", decodedString);
-            term.write(decodedString);
+            term.write(event.payload);
         });
 
-        // FIX #2: Make sure this calls the 'write_to_pty' command
+        // THE FIX: Send the data as a simple string with the key 'text'
         const onDataUnlisten = term.onData((data) => {
-            const encoder = new TextEncoder();
-            invoke('write_to_pty', { bytes: Array.from(encoder.encode(data)) });
+            invoke('write_to_pty', { text: data });
         });
 
         const unlistenResize = await appWindow.onResized(() => {
             setTimeout(() => fitAddon.fit(), 50);
         });
+
+        const startupCommand = sessionStorage.getItem('startupCommand');
+        if (startupCommand) {
+            console.log("Found startup command:", startupCommand);
+            // If a command is found, send it to the terminal
+            invoke('write_to_pty', { text: startupCommand });
+
+            // Clear the command from storage so it doesn't run again on a page refresh
+            sessionStorage.removeItem('startupCommand');
+        }
 
         onDestroy(() => {
             unlisten();
@@ -69,6 +80,8 @@
         });
 
         term.focus();
+
+
     });
 </script>
 
